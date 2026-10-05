@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.0
+    hooks:
+      - id: ruff
+      - id: ruff-format
+  - repo: local
+    hooks:
+      # LỆCH CÓ CHỦ ĐÍCH so với snippet SPEC mục 11.5 (xem README "Lệch so với spec"):
+      # spec compile ra /tmp rồi `diff` — sẽ luôn fail vì (1) thiếu --generate-hashes
+      # trong khi lock commit có hash, (2) header pip-compile ghi cả --output-file.
+      # Ở đây: cùng ĐÚNG 1 lệnh canonical như README/CI, compile tại chỗ rồi
+      # `git diff --exit-code` — lệch nghĩa là .txt chưa khớp .in.
+      - id: check-lockfile-sync
+        name: Check requirements/api .in/.txt in sync
+        entry: bash -c 'pip-compile --generate-hashes --no-header requirements/api.in -o requirements/api.txt && git diff --exit-code requirements/api.txt'
+        language: system
+        files: ^requirements/api\.(in|txt)$
+        pass_filenames: false

@@ -1,0 +1,71 @@
+seed: 42
+
+paths:
+  rmfd_masked_dir: data/raw/rmfd/masked        # RMFRD thật — is_masked=true
+  rmfd_unmasked_dir: data/raw/rmfd/unmasked    # RMFRD thật — is_masked=false, nguồn augment
+  enrollment_dir: data/raw/enrollment          # ảnh cá nhân — KHÔNG vào train/val/test (xem split.enrollment_policy)
+  masktheface_rmfd_out_dir: data/processed/masktheface/rmfd          # augment của rmfd_unmasked
+  masktheface_enrollment_out_dir: data/processed/masktheface/enrollment  # augment của enrollment, chỉ để demo
+  splits_dir: data/splits
+
+masktheface:
+  repo_dir: third_party/MaskTheFace   # git submodule — KHÔNG track nội dung trong repo này, xem README
+  script_name: mask_the_face.py
+  mask_types: [surgical, N95, cloth]   # đúng argparse choices thật của mask_the_face.py (đã verify từ source)
+  write_original_image: false
+  # Bổ sung 2026-09-28 (SPEC v2.1 "B7" — quy mô augment không khớp spec): full
+  # RMFD unmasked (~90K ảnh) x 3 mask_type = ~270K job con, mỗi job 1 lần khởi
+  # động Python + nạp dlib — quá nặng cho 1 DVC stage all-or-nothing trên Colab
+  # free. Cap số ảnh/identity đưa vào MaskTheFace; null = không cap (chạy full
+  # khi đã kiểm chứng ổn với subset nhỏ trước).
+  max_images_per_identity: 5
+  # Tỷ lệ tối thiểu số identity phải có >=1 ảnh output để KHÔNG raise lỗi dừng
+  # toàn bộ stage — chặn tình huống chạy hết ~270K job mà không ai biết MaskTheFace
+  # đang fail hàng loạt (vd thiếu submodule/dlib model) cho tới khi xem log.
+  min_success_rate: 0.5
+  # Contract input->output ĐÃ VERIFY trực tiếp từ source mask_the_face.py:
+  # `args.write_path = args.path + "_masked"` — wrapper trong src/data/preprocessing.py
+  # dựa đúng vào dòng này.
+  #
+  # dlib shape predictor (~99MB): `download_dlib_model()` của CHÍNH MaskTheFace
+  # tự tải nếu chưa có — NHƯNG đã verify hàm đó tải từ http://dlib.net/..., một
+  # domain KHÔNG CHẮC mọi môi trường đều reach được (sandbox viết code dự án
+  # này không reach được domain đó dù reach được GitHub/PyPI bình thường — tải
+  # về 0 byte, lỗi `bz2.OSError: Invalid data stream` lúc giải nén). Trên Colab
+  # (internet không giới hạn domain) nhiều khả năng tự tải được, nhưng KHÔNG
+  # giả định — nếu auto-download fail, tải tay qua GitHub mirror:
+  #   curl -L -o third_party/MaskTheFace/dlib_models/shape_predictor_68_face_landmarks.dat.bz2 \
+  #     https://raw.githubusercontent.com/davisking/dlib-models/master/shape_predictor_68_face_landmarks.dat.bz2
+  #   bzip2 -d third_party/MaskTheFace/dlib_models/shape_predictor_68_face_landmarks.dat.bz2
+  # (đã verify cách này tải được + MaskTheFace chạy đúng với file kết quả).
+  #
+  # Gói `dlib` chính thức trên PyPI không có wheel cho Python hiện đại (phải
+  # compile từ source) — dùng `pip install dlib-bin` (bên thứ 3, có wheel sẵn,
+  # đã verify `import dlib` chạy được ngay) THAY cho dòng `dlib==...` trong
+  # third_party/MaskTheFace/requirements.txt.
+  #
+  # ĐÃ VERIFY (không còn là "CHƯA verify"): tên file trong thư mục *_masked/
+  # giữ `<tên_gốc>_<mask_type>.<ext>` (vd `photo1_surgical.jpg`) — wrapper quét
+  # toàn bộ ảnh thay vì đoán tên nên việc này vốn không ảnh hưởng tính đúng đắn
+  # của pipeline, chỉ xác nhận thêm cho chắc.
+
+split:
+  strategy: identity_disjoint          # QUYẾT ĐỊNH ĐÃ CHỐT — không đổi sang stratified_by_image
+  ratios: {train: 0.7, val: 0.15, test: 0.15}
+  # Stratify identity theo SỐ ẢNH MASKED THẬT (rmfd_masked, KHÔNG tính synthetic)
+  # — SỬA 2026-09-28 (SPEC v2.1 "B4"): bin theo mask_ratio liên tục (gồm cả
+  # synthetic) sụp đổ về 1 bin duy nhất vì synthetic luôn áp đảo ảnh thật theo
+  # cùng tỷ lệ ở mọi identity (đã tái hiện bằng thực nghiệm). Danh sách tăng dần,
+  # vd [1, 5] -> 3 bin: {0 ảnh mask thật}, {1-4 ảnh}, {>=5 ảnh} — xem
+  # src/data/labels.py:real_masked_bin().
+  real_masked_thresholds: [1, 5]
+  # Identity có ít hơn ngưỡng này ẢNH THẬT (rmfd_masked + rmfd_unmasked, KHÔNG
+  # tính synthetic — SỬA 2026-09-28, SPEC v2.1 "B5") bị loại khỏi train/val/test.
+  # Trước đây đếm cả synthetic nên 1 identity chỉ có 1 ảnh thật + nhiều bản
+  # synthetic sinh từ chính ảnh đó vẫn được giữ — không đủ để tạo cặp
+  # genuine/impostor đáng tin cho verification eval.
+  min_images_per_identity: 2
+  # Ảnh augment (masktheface_synthetic) LUÔN đi theo identity_id gốc vào đúng
+  # 1 split — không random riêng. Đây là thuộc tính của cách gán split theo
+  # identity_id (không phải theo ảnh), không phải 1 cờ bật/tắt riêng.
+  enrollment_policy: exclude_from_metrics  # enrollment → splits/enrollment_demo.csv riêng, không tính vào train/val/test

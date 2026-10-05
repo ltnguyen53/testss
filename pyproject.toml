@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "face-tracking-mlops"
+version = "0.1.0"
+description = "Occlusion-aware face detection + tracking portfolio project"
+requires-python = ">=3.10"
+# Dependencies KHÔNG khai báo ở đây — nằm ở requirements/api.in và train.in
+# (tách 2 môi trường Render/Colab, xem SPEC mục 11.1).
+
+# LỆCH CÓ CHỦ ĐÍCH so với snippet SPEC mục 11.2: spec viết `where = ["src"]`, nhưng
+# với layout hiện tại (src/ là package, code import `from src.data...` và chạy
+# `python -m src.training.train`) thì where=["src"] chỉ expose các package cấp
+# cao `data`, `training`, `api`... chứ KHÔNG expose `src.*` — đã chạy thử
+# find_packages ở cả 2 cách: where="src" -> ['evaluation','training','export','api','data'];
+# where="." + include src* -> ['src','src.evaluation',...]. Dùng cách thứ hai để đạt
+# đúng ý định của spec (`src` import được như package thật, mọi nơi).
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.pytest.ini_options]
+# `pytest` mặc định CHỈ chạy unit test. tests/integration cần onnx/onnxruntime,
+# chạy tường minh ở CI job 3 (SPEC mục 12): `pytest tests/integration`.
+testpaths = ["tests/unit"]
+addopts = "-q"

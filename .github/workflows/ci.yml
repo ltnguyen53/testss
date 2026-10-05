@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  # PHẢI trùng minor version Python nơi bạn sinh lock file — pip-compile resolve
+  # khác nhau theo Python version, lệch thì lock-sync đỏ dù .in không đổi.
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # SPEC mục 11.1/12.1: .txt phải khớp .in. Compile TẠI CHỖ bằng đúng lệnh canonical
+  # (giống README và pre-commit) rồi git diff — không compile ra /tmp (lệch header).
+  # ĐỎ cho tới khi bạn commit requirements/*.txt lần đầu — expected, không phải bug.
+  lock-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pip-tools
+      - name: Kiểm tra lock file tồn tại
+        run: |
+          for f in requirements/api.txt requirements/train.txt; do
+            test -f "$f" || { echo "::error::$f chưa tồn tại — chạy pip-compile lần đầu (xem README)"; exit 1; }
+          done
+      - name: Recompile và so với bản đã commit
+        run: |
+          pip-compile --generate-hashes --no-header requirements/api.in -o requirements/api.txt
+          pip-compile --generate-hashes --no-header requirements/train.in -o requirements/train.txt
+          git diff --exit-code requirements/
+
+  # SPEC mục 12.1: lint (ruff, chung config pyproject) + unit test (tests/unit).
+  # Cài package qua `pip install -e .` (SPEC 11.2) + đúng deps tối thiểu test cần —
+  # KHÔNG cài torch/dlib/opencv (test dùng fake runner/fake serializer). numpy cần cho
+  # tests/unit/test_normalize.py (hợp đồng preprocessing).
+  #
+  # QUAN TRỌNG: job này KHÔNG chứng minh phần ML thật sự chạy đúng — mọi test cần
+  # torch (head.py/model.py/dataset.py/embed.py/train.py/run_eval.py, nhánh torch
+  # của rng_state.py) tự skip ở đây (`pytest.importorskip("torch")`), chỉ job
+  # `train-test` bên dưới mới chạy chúng thật. Xanh ở job này KHÔNG đủ để merge an
+  # toàn — xem `train-test`.
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install -e . ruff pytest pyyaml numpy
+      - run: ruff check src tests
+      - run: pytest tests/unit
+
+  # BỔ SUNG (2026-10-02, không có trong SPEC v2.1 mục 12 gốc — xem "Chỗ CỐ Ý
+  # lệch so với spec" trong README): chạy LẠI đúng `pytest tests/unit`, lần này
+  # với requirements/train.txt cài đủ (torch, torchvision, mlflow, pillow...).
+  # Lý do tồn tại: `lint-test` ở trên bỏ qua 26/141 test (tính tới thời điểm viết
+  # job này) — gồm 2 test tích hợp quan trọng nhất (train.py chạy thật + resume,
+  # run_eval.py chạy thật end-to-end: embed -> pairs -> threshold -> report ->
+  # registry). Không có job này, CI xanh không chứng minh được gì về phần lõi
+  # ML, chỉ chứng minh phần orchestration thuần Python (pairs/threshold/
+  # report/registry/config) đúng.
+  #
+  # RỦI RO ĐÃ BIẾT, CHƯA GIẢI QUYẾT (ghi rõ thay vì giấu): `pip install -r
+  # requirements/train.txt` cài bản torch mặc định từ PyPI, kèm theo các gói
+  # nvidia-cuda-*/nvidia-cublas-*/nvidia-cudnn-* dù runner KHÔNG CÓ GPU — tổng
+  # dung lượng có thể gần/vượt quota disk của runner hosted (~14GB). Nếu job
+  # này fail vì hết disk: 2 hướng xử lý, không chọn trước vì mỗi hướng đánh đổi
+  # khác nhau — (a) thêm `--index-url https://download.pytorch.org/whl/cpu`
+  # CHỈ cho job này (nhẹ hơn nhiều) nhưng phải sinh lại train.txt với
+  # --generate-hashes TỪ chính index đó, nếu không hash sẽ lệch với wheel GPU
+  # mặc định và install fail; (b) dùng runner `ubuntu-latest-large` (nhiều disk
+  # hơn, tốn phút Actions nhiều hơn). Không tự chọn thay bạn vì đánh đổi
+  # cost/tốc độ khác nhau tuỳ ngân sách Actions của bạn.
+  train-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Kiểm tra lock file tồn tại
+        run: test -f requirements/train.txt || { echo "::error::requirements/train.txt chưa tồn tại — xem README mục 'Việc bạn phải tự làm'"; exit 1; }
+      - run: pip install -e . ruff pytest -r requirements/train.txt
+      - run: pytest tests/unit

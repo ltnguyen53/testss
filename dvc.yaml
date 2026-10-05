@@ -1,0 +1,32 @@
+stages:
+  augment_masks:
+    cmd: python -m src.data.preprocessing --config configs/data.yaml
+    deps:
+      - src/data/preprocessing.py
+      - data/raw/rmfd/unmasked
+      - data/raw/enrollment
+    params:
+      - configs/data.yaml:
+          - masktheface
+    outs:
+      - data/processed/masktheface/rmfd
+      - data/processed/masktheface/enrollment
+
+  make_splits:
+    cmd: python -m src.data.labels --config configs/data.yaml
+    deps:
+      - src/data/labels.py
+      - data/raw/rmfd/masked
+      - data/raw/rmfd/unmasked
+      - data/processed/masktheface/rmfd
+      - data/raw/enrollment
+      - data/processed/masktheface/enrollment
+    params:
+      - configs/data.yaml:
+          - seed
+          - split
+    outs:
+      - data/splits/train.csv
+      - data/splits/val.csv
+      - data/splits/test.csv
+      - data/splits/enrollment_demo.csv

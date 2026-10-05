@@ -1,0 +1,11 @@
+# Deps CHO SERVICE API TRÊN RENDER (512MB) — CHỈ những gì FastAPI cần chạy.
+# KHÔNG thêm torch/onnxruntime-training/mlflow/dvc vào đây — sẽ vượt RAM 512MB.
+# Sau khi sửa file này: chạy lại đúng lệnh canonical:
+#   pip-compile --generate-hashes --no-header requirements/api.in -o requirements/api.txt
+# (cần máy có mạng — Colab hoặc local) để sinh lại api.txt, rồi commit cả hai.
+
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+slowapi          # rate-limit cho /events, /enrollment (SPEC v2 mục 9, hardening ở Phase 7 — bật khi cần)
