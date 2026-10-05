@@ -67,7 +67,11 @@ def build_masktheface_command(
 def stage_identity_images(
     identity_dir: Path, staging_dir: Path, max_images: int | None = None
 ) -> int:
-    """Symlink ảnh của 1 identity vào staging_dir (không copy byte ảnh).
+    """Stage ảnh của 1 identity vào staging_dir.
+
+    Symlinks are preferred to avoid copying image bytes. On Windows, creating
+    symlinks requires a privilege that may not be enabled, so the specific
+    ``WinError 1314`` case falls back to copying the file.
 
     `max_images` (bổ sung 2026-09-28, SPEC v2.1 "B7"): giới hạn số ảnh/identity
     đưa vào MaskTheFace — mặc định None = không giới hạn (giữ nguyên hành vi cũ,
@@ -88,7 +92,12 @@ def stage_identity_images(
         link = staging_dir / img.name
         if link.exists() or link.is_symlink():
             continue  # trùng tên trong cùng 1 identity — bỏ qua an toàn, không ghi đè
-        link.symlink_to(img.resolve())
+        try:
+            link.symlink_to(img.resolve())
+        except OSError as exc:
+            if getattr(exc, "winerror", None) != 1314:
+                raise
+            shutil.copyfile(img, link)
         count += 1
     return count
 

@@ -21,3 +21,5 @@ node_modules/
 !data/splits/.gitkeep
 .dvc/cache
 .dvc/tmp
+data/raw
+data/processed

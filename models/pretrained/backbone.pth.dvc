@@ -1,0 +1,5 @@
+outs:
+- md5: b9b1f8b29151d5564f1be869cc26bd23
+  size: 174680546
+  hash: md5
+  path: backbone.pth
