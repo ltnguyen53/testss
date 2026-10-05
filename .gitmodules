@@ -1,0 +1,3 @@
+[submodule "third_party/MaskTheFace"]
+	path = third_party/MaskTheFace
+	url = https://github.com/aqeelanwar/MaskTheFace.git
