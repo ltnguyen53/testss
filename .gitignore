@@ -21,5 +21,10 @@ node_modules/
 !data/splits/.gitkeep
 .dvc/cache
 .dvc/tmp
-data/raw
-data/processed
+# Keep datasets ignored while allowing DVC metadata to be tracked.
+data/raw/**
+!data/raw/**/
+!data/raw/**/*.dvc
+data/processed/**
+!data/processed/**/
+!data/processed/**/*.dvc
