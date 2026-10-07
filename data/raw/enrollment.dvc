@@ -1,0 +1,6 @@
+outs:
+- md5: 38910ee870f8e09dbb10f28e3bfc8622.dir
+  size: 836388
+  nfiles: 8
+  hash: md5
+  path: enrollment
