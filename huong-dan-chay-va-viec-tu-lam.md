@@ -56,7 +56,8 @@ Lần đầu nhiều khả năng `ruff format` tự sửa vài file — `git add
 ```bash
 git init   # nếu chưa có .git
 dvc init
-dvc remote add -d dagshub-storage https://dagshub.com/<user>/<repo>.dvc
+dvc remote add -d dagshub-storage s3://dvc
+dvc remote modify dagshub-storage endpointurl https://dagshub.com/<user>/<repo>.s3
 dvc remote modify dagshub-storage --local access_key_id <dagshub_token>
 dvc remote modify dagshub-storage --local secret_access_key <dagshub_token>
 dvc push   # push rỗng lần đầu để xác nhận remote hoạt động
@@ -255,7 +256,8 @@ pip install -e .
 pip install pip-tools && pip-compile --generate-hashes --no-header requirements/train.in -o requirements/train.txt
 pip install -r requirements/train.txt
 pre-commit install && pre-commit run --all-files
-dvc init && dvc remote add -d dagshub-storage https://dagshub.com/<user>/<repo>.dvc
+dvc init && dvc remote add -d dagshub-storage s3://dvc
+dvc remote modify dagshub-storage endpointurl https://dagshub.com/<user>/<repo>.s3
 dvc remote modify dagshub-storage --local access_key_id <token>
 dvc remote modify dagshub-storage --local secret_access_key <token>
 
