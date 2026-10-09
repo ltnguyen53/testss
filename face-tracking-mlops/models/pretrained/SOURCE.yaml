@@ -1,0 +1,11 @@
+# Nguồn của backbone.pth — commit file này vào git (backbone.pth thì `dvc add`, không commit).
+# Các field null là việc BẠN điền sau khi tải weight; code (src/training/weights.py)
+# raise nếu còn null hoặc SHA256 không khớp file thật.
+model_name: null            # tên file/thư mục trong model zoo, vd ms1mv3_arcface_r50_fp16 (điền đúng như bạn tải)
+architecture: r50           # phải khớp backbone.arch trong configs/finetune_occlusion.yaml
+training_dataset: MS1MV3
+download_date: null         # YYYY-MM-DD
+sha256: null                # sha256sum models/pretrained/backbone.pth
+upstream_repo: https://github.com/deepinsight/insightface   # recognition/arcface_torch
+upstream_commit: null       # `git rev-parse HEAD` trong third_party/insightface
+license_note: non-commercial research purposes only (theo README arcface_torch) — ghi vào model card

@@ -1,0 +1,22 @@
+# Hợp đồng train <-> browser + cấu hình export (SPEC v2.1 mục 6).
+# Phần `preprocessing` đã đối chiếu với inference.py / torch2onnx.py chính thức của
+# arcface_torch: RGB, 112x112, (x/255 - 0.5)/0.5, layout CHW. Frontend PHẢI làm y hệt.
+preprocessing:
+  input_size: 112
+  channel_order: RGB
+  layout: CHW
+  scale: 255.0
+  mean: 0.5
+  std: 0.5
+  # Alignment (căn chỉnh mặt): CHƯA CHỐT. inference.py chính thức chỉ resize 112x112.
+  # Ảnh RMFD và crop từ browser phải theo cùng 1 quy tắc crop/align — lệch là skew.
+  alignment: null
+
+onnx:
+  input_name: data          # theo torch2onnx.py chính thức
+  dynamic_batch: true
+  dropout: 0.0              # theo torch2onnx.py chính thức (get_model(..., dropout=0.0, ...))
+  opset: null               # SPEC 6: phải cố định — export code fail nếu còn null (torch2onnx.py mặc định 11)
+
+quantization:
+  mode: null                # int8 | fp16 — quyết sau khi đo (dung lượng, ΔTAR@FAR, latency onnxruntime-web)
