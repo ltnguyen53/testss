@@ -1,8 +1,0 @@
-data/
-notebooks/
-frontend/node_modules/
-tests/
-.git/
-.github/
-*.md
-.env

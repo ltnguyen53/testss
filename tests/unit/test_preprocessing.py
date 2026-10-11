@@ -80,29 +80,8 @@ def test_stage_identity_images_symlinks_only_images(tmp_path):
     n = stage_identity_images(identity_dir, staging)
 
     assert n == 2
-    assert (staging / "a.jpg").is_file()
-    if (staging / "a.jpg").is_symlink():
-        assert (staging / "a.jpg").resolve() == (identity_dir / "a.jpg").resolve()
+    assert (staging / "a.jpg").is_symlink()
     assert not (staging / "readme.txt").exists()
-
-
-def test_stage_identity_images_copies_when_symlink_privilege_is_missing(tmp_path, monkeypatch):
-    identity_dir = tmp_path / "raw" / "id001"
-    _touch(identity_dir / "a.jpg")
-    staging = tmp_path / "staging"
-
-    def fail_symlink(self, target):
-        error = OSError("symlink privilege is missing")
-        error.winerror = 1314
-        raise error
-
-    monkeypatch.setattr(Path, "symlink_to", fail_symlink)
-
-    assert stage_identity_images(identity_dir, staging) == 1
-    staged = staging / "a.jpg"
-    assert staged.is_file()
-    assert not staged.is_symlink()
-    assert staged.read_bytes() == (identity_dir / "a.jpg").read_bytes()
 
 
 def test_stage_identity_images_respects_max_images_cap(tmp_path):

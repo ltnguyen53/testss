@@ -16,15 +16,16 @@ node_modules/
 *.onnx
 *.pt
 *.pth
-!data/raw/.gitkeep
-!data/processed/.gitkeep
 !data/splits/.gitkeep
 .dvc/cache
 .dvc/tmp
-# Keep datasets ignored while allowing DVC metadata to be tracked.
+
+# Keep large datasets out of Git while tracking DVC metadata.
 data/raw/**
 !data/raw/**/
 !data/raw/**/*.dvc
 data/processed/**
 !data/processed/**/
 !data/processed/**/*.dvc
+!data/raw/.gitkeep
+!data/processed/.gitkeep

@@ -1,7 +1,0 @@
-# Chuẩn .gitignore syntax — loại các thứ DVC không cần quét khi tính hash
-.git/
-__pycache__/
-.pytest_cache/
-.ruff_cache/
-.venv/
-venv/

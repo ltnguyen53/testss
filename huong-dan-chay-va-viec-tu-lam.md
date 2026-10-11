@@ -10,6 +10,20 @@
 > verify**"; phần nào chỉ đọc code suy ra, chưa chạy thật, ghi rõ "**chưa
 > verify, cần bạn tự xác nhận**".
 
+> **Cập nhật 2026-10-06**: bản trước thiếu bước `dvc add` cho dữ liệu raw
+> (RMFD/enrollment/backbone weight) và thiếu `dvc push` sau `dvc repro` — hậu
+> quả là Colab `dvc pull` không kéo về được gì ngoài các file do pipeline tự
+> sinh. Đã bổ sung mục 3.1 và 5.1, kèm xác nhận bằng thực nghiệm (dựng 1 repo
+> DVC thu nhỏ để kiểm chứng hành vi `deps:` vs `outs:`, không suy đoán).
+>
+> **Cập nhật 2026-10-07**: phát hiện thêm `data/splits/*.csv` (output của
+> `make_splits`) không nên đi qua DVC — nhỏ, nên để git track trực tiếp
+> (`git diff` xem được nội dung đổi, không cần `dvc pull` chỉ để lấy vài file
+> text). Đã **sửa thẳng `dvc.yaml`** (thêm `cache: false` cho 4 file CSV) và
+> `notebooks/train_colab.ipynb`, không chỉ sửa guide — đã verify bằng thực
+> nghiệm riêng (xác nhận `git clone` một mình, chưa chạy `dvc pull`, đã đọc
+> được đúng nội dung CSV).
+
 ---
 
 ## 0. Yêu cầu hệ thống
@@ -41,6 +55,17 @@ pip install -r requirements/train.txt
 
 **Đã verify (2026-10-02)**: `requirements/api.txt` sinh được, idempotent (chạy lại ra file giống hệt). `requirements/train.txt` **chưa sinh được trong sandbox viết code** — `pip-compile` cho `torch`/`torchvision` cần tải wheel thật để resolve (không chỉ metadata như gói nhẹ), sandbox hết đĩa giữa chừng. Chạy lệnh trên trên máy có đủ đĩa (vài GB trống) — khuyến nghị chạy thẳng trên Colab, vừa đủ đĩa vừa đúng Python version Colab dùng để train thật sau này.
 
+**Nếu chạy `pip-compile` trên Windows và vẫn đầy ổ C: dù đã trỏ `TEMP`/`TMP`/`PIP_CACHE_DIR` sang ổ khác** — đọc source `pip-tools` 7.6.1 xác nhận nguyên nhân: `pip-compile` có **cache riêng** (`piptools/locations.py`: `CACHE_DIR = user_cache_dir("pip-tools")`, mặc định Windows là `%LOCALAPPDATA%\pip-tools\Cache`, tức `C:\Users\<tên>\AppData\Local\pip-tools\Cache`), và với resolver mặc định (backtracking) nó **truyền thư mục đó cho pip qua `--cache-dir`** (`scripts/compile.py`) — đè lên `PIP_CACHE_DIR`/`pip config` của bạn. Wheel tải về để resolve/hash (`.../pkgs`) cũng nằm dưới đây. `TEMP`/`TMP` không ảnh hưởng vì đường dẫn này lấy từ `LOCALAPPDATA`. Cách sửa (cmd):
+
+```bat
+set PIP_TOOLS_CACHE_DIR=F:\pip-tools-cache
+pip-compile --generate-hashes --no-header requirements/train.in -o requirements/train.txt
+```
+
+Cố định cho các terminal sau: `setx PIP_TOOLS_CACHE_DIR F:\pip-tools-cache`. Dọn phần đã chiếm trên C: `rmdir /s /q "%LOCALAPPDATA%\pip-tools"`. (Chưa chạy thử trên Windows thật — phần "pip-tools đè cache-dir" đã đọc từ source, còn việc lỗi ENOSPC trong log của bạn đúng là ghi vào thư mục này là suy luận khớp với traceback.)
+
+**Cảnh báo — nên sinh `train.txt` trên Linux (Colab/WSL), không phải Windows**: `pip-compile` chỉ resolve cho đúng hệ điều hành + phiên bản Python đang chạy, và pip-tools ghi rõ output phụ thuộc nền tảng. `torch` trên Linux kéo thêm nhóm `nvidia-*`/`triton`; lock compile trên Windows sẽ không có các gói đó, còn CI (`ubuntu-latest`, `lock-sync` recompile rồi so) và Colab đều là Linux — nên rất dễ lệch/đỏ. Python trong venv của bạn (3.12) cũng lệch `PYTHON_VERSION` trong `ci.yml` (3.11). Cách gọn nhất: chạy 3 lệnh `pip-compile` ở trên **trên Colab** (kiểm `python --version`, rồi đặt `PYTHON_VERSION` trong `.github/workflows/ci.yml` cho khớp), tải `requirements/train.txt` về commit. (Phần "platform-specific" dựa trên tài liệu pip-tools, mình chưa tự kiểm bằng cách compile trên 2 hệ điều hành.)
+
 ### 1.2 Pre-commit
 
 ```bash
@@ -56,8 +81,7 @@ Lần đầu nhiều khả năng `ruff format` tự sửa vài file — `git add
 ```bash
 git init   # nếu chưa có .git
 dvc init
-dvc remote add -d dagshub-storage s3://dvc
-dvc remote modify dagshub-storage endpointurl https://dagshub.com/<user>/<repo>.s3
+dvc remote add -d dagshub-storage https://dagshub.com/<user>/<repo>.dvc
 dvc remote modify dagshub-storage --local access_key_id <dagshub_token>
 dvc remote modify dagshub-storage --local secret_access_key <dagshub_token>
 dvc push   # push rỗng lần đầu để xác nhận remote hoạt động
@@ -139,6 +163,20 @@ data/raw/enrollment/<identity_id>/*.jpg       # ảnh cá nhân bạn tự chụ
 
 **Lưu ý chất lượng dữ liệu**: nếu bạn thử mirror GitHub không chính thức thay vì Baidu Pan — đã tự kiểm tra bằng mắt 1 mirror cụ thể (`X-zhangyang/Real-World-Masked-Face-Dataset`, nhánh `RWMFD_part_1`) và phát hiện **một số thư mục "identity" lẫn ảnh quảng cáo/ảnh đám đông, không phải ảnh nhất quán 1 người thật**. Đừng tin mù quáng bất kỳ mirror nào — spot-check vài thư mục bằng mắt trước khi train thật.
 
+### 3.1 Track bằng DVC — bước BẮT BUỘC, bản guide trước thiếu đúng chỗ này
+
+**Đã verify bằng thực nghiệm riêng (2026-10-06, dựng 1 repo DVC thu nhỏ y hệt cấu trúc project này để kiểm chứng, không suy đoán từ tài liệu)**: chỉ đặt file vào `data/raw/...` rồi chạy `dvc repro` **KHÔNG đủ** để dữ liệu được `dvc push` lên remote. Lý do: `dvc.yaml` liệt kê `data/raw/rmfd/masked`/`unmasked` như `deps:` của stage `make_splits`/`augment_masks`, nhưng **3 thư mục đó không phải `outs:` của bất kỳ stage nào** — DVC chỉ tự động đưa **`outs:`** (output của stage, vd `data/processed/masktheface/rmfd`, `data/splits/*.csv`) vào cache để push. `deps:` là dữ liệu bên ngoài do bạn tự đặt vào, DVC chỉ hash để biết stage có cần chạy lại hay không, **KHÔNG tự cache/push nội dung** — thực nghiệm xác nhận: không `dvc add` thì `dvc push` chỉ đẩy đúng phần `outs:`, một `dvc pull` trên máy khác (Colab) sẽ KHÔNG kéo về được `data/raw/rmfd/masked`/`unmasked`/`enrollment` — đúng như bạn phát hiện.
+
+**Cách đúng — chạy ngay sau khi đặt ảnh RMFD vào đúng cấu trúc ở trên, TRƯỚC `dvc repro`:**
+
+```bash
+dvc add data/raw/rmfd/masked data/raw/rmfd/unmasked data/raw/enrollment
+git add data/raw/rmfd/masked.dvc data/raw/rmfd/unmasked.dvc data/raw/enrollment.dvc data/.gitignore
+git commit -m "data: add RMFD raw + enrollment thật"
+```
+
+Lệnh `dvc add` tạo file `.dvc` (con trỏ nhỏ, chứa hash — commit vào git bình thường) cho từng thư mục — đây chính là phần guide trước thiếu ("không có tạo các file .dvc" đúng như bạn chỉ ra). Thiếu bước này thì `data/raw/...` không bao giờ vào được DVC cache, dù `dvc repro`/`dvc push` chạy bao nhiêu lần.
+
 ---
 
 ## 4. Backbone weight thật — **việc bạn PHẢI tự làm**
@@ -155,7 +193,7 @@ sha256sum models/pretrained/backbone.pth   # điền vào field sha256
 
 Các field cần điền: `model_name`, `download_date`, `sha256`, `upstream_commit` (`git rev-parse HEAD` trong `third_party/insightface` nếu bạn clone kèm source, hoặc ghi commit tương ứng thời điểm tải). `architecture` đã sẵn `r50`, `upstream_repo`/`license_note` đã điền sẵn.
 
-4. `dvc add models/pretrained/backbone.pth` (file nhị phân, không commit thẳng vào git) rồi `dvc push`.
+4. `dvc add models/pretrained/backbone.pth` (file nhị phân, không commit thẳng vào git). **Chưa cần `dvc push` ngay** — gộp chung 1 lần `dvc push` với dữ liệu RMFD ở mục 5.1 cho gọn (push nhiều lần cũng không sai, chỉ dư bước).
 
 **Giấy phép**: model zoo này chỉ dùng cho mục đích nghiên cứu phi thương mại (đã ghi sẵn trong `SOURCE.yaml`) — portfolio/demo ổn, không được định vị là sản phẩm thương mại.
 
@@ -174,7 +212,7 @@ python -m src.data.preprocessing --config configs/data.yaml
 python -m src.data.labels --config configs/data.yaml
 ```
 
-Hoặc dùng DVC để chạy cả 2 stage theo đúng dependency graph (`dvc.yaml`):
+Hoặc dùng DVC để chạy cả 2 stage theo đúng dependency graph (`dvc.yaml`) — **khuyến nghị dùng cách này**, vì `dvc repro` tự ghi lại hash vào `dvc.lock`, cần thiết cho bước push ngay sau:
 
 ```bash
 dvc repro
@@ -183,6 +221,23 @@ dvc repro
 Kết quả mong đợi: `data/splits/{train,val,test,enrollment_demo}.csv` xuất hiện, log in ra số identity/ảnh mỗi split (xem `src/data/labels.py:run()` — log cả cảnh báo nếu có identity thiếu ảnh masked/unmasked thật).
 
 `configs/data.yaml` có `max_images_per_identity: 5` (cap số ảnh/identity đưa vào MaskTheFace, tránh chạy hết ~270K job con ngay lần đầu) — tăng dần sau khi xác nhận pipeline chạy ổn với subset nhỏ.
+
+### 5.1 Push lên DagsHub — bước BẮT BUỘC, nếu không Colab sẽ `dvc pull` về tay không
+
+`dvc repro` chạy xong chỉ cập nhật **local cache** trên máy bạn — chưa có gì lên DagsHub cả. Đẩy lên remote + commit con trỏ vào git (thiếu `git push` thì Colab `git clone`/`git pull` cũng không biết gì để mà `dvc pull`):
+
+```bash
+dvc push
+git add dvc.lock
+git commit -m "data: chạy augment_masks + make_splits trên RMFD thật"
+git push
+```
+
+Tới đây, `dvc push` đẩy đúng 2 nhóm nhị phân: `data/raw/rmfd/{masked,unmasked}` + `data/raw/enrollment` (đã `dvc add` ở mục 3.1), và `data/processed/masktheface/*` (outs của `augment_masks`, tự cache khi `dvc repro` chạy) — cộng `models/pretrained/backbone.pth` (đã `dvc add` ở mục 4).
+
+**Riêng `data/splits/*.csv` KHÔNG qua DVC nữa** (`dvc.yaml` đã đặt `cache: false` cho 4 file này — đã verify bằng thực nghiệm riêng, xem comment trong chính `dvc.yaml`): CSV nhỏ, để **git track trực tiếp** thay vì đẩy vào DVC cache/remote như ảnh nhị phân lớn — vừa xem được `git diff` thật khi split đổi, vừa không cần `dvc pull` chỉ để lấy vài file text. `git commit dvc.lock` ở trên đã kèm theo đúng nội dung CSV (vì CSV giờ là file git thường, nằm trong cùng commit) — `git push` ở cuối đẩy cả 2.
+
+Thiếu bất kỳ bước `dvc add`/`dvc push`/`git push` nào ở trên — máy khác (Colab, mục 6) sẽ `git clone`/`dvc pull` "thành công" nhưng không về đủ file, rồi `train.py` lỗi `FileNotFoundError` khi tìm ảnh theo `image_path` trong manifest CSV (xem `src/training/dataset.py:load_batch` — đọc trực tiếp từ `data/raw/...` và `data/processed/...`, cả 2 đều phải có mặt; CSV thì chỉ cần `git clone`/`git pull` là đủ, không cần đợi `dvc pull`).
 
 ---
 
@@ -256,8 +311,7 @@ pip install -e .
 pip install pip-tools && pip-compile --generate-hashes --no-header requirements/train.in -o requirements/train.txt
 pip install -r requirements/train.txt
 pre-commit install && pre-commit run --all-files
-dvc init && dvc remote add -d dagshub-storage s3://dvc
-dvc remote modify dagshub-storage endpointurl https://dagshub.com/<user>/<repo>.s3
+dvc init && dvc remote add -d dagshub-storage https://dagshub.com/<user>/<repo>.dvc
 dvc remote modify dagshub-storage --local access_key_id <token>
 dvc remote modify dagshub-storage --local secret_access_key <token>
 
@@ -271,12 +325,23 @@ bzip2 -d third_party/MaskTheFace/dlib_models/shape_predictor_68_face_landmarks.d
 
 # 3+4. Tự tải tay: RMFD (Baidu Pan) -> data/raw/rmfd/{masked,unmasked}/<id>/
 #                  backbone.pth (Baidu/OneDrive) -> models/pretrained/backbone.pth
-#      Điền models/pretrained/SOURCE.yaml, rồi: dvc add models/pretrained/backbone.pth
+#      Điền models/pretrained/SOURCE.yaml
 
-# 5. Data pipeline
-python -m src.data.preprocessing --config configs/data.yaml --dry-run
-python -m src.data.preprocessing --config configs/data.yaml
-python -m src.data.labels --config configs/data.yaml
+# 3.1+4 (BẮT BUỘC, hay bị bỏ sót — xem mục 3.1): dvc add cho MỌI raw input
+dvc add data/raw/rmfd/masked data/raw/rmfd/unmasked data/raw/enrollment models/pretrained/backbone.pth
+git add data/raw/rmfd/masked.dvc data/raw/rmfd/unmasked.dvc data/raw/enrollment.dvc \
+        models/pretrained/backbone.pth.dvc data/.gitignore models/pretrained/.gitignore
+git commit -m "data: add RMFD raw + enrollment + backbone weight thật"
+
+# 5. Data pipeline (dùng dvc repro để dvc.lock được ghi đúng, cần cho bước push)
+python -m src.data.preprocessing --config configs/data.yaml --dry-run   # soát trước
+dvc repro
+
+# 5.1 (BẮT BUỘC — thiếu bước này thì Colab dvc pull về tay không)
+dvc push
+git add dvc.lock
+git commit -m "data: chạy augment_masks + make_splits"
+git push
 
 # 6. Train
 export MLFLOW_TRACKING_URI=https://dagshub.com/<user>/<repo>.mlflow
